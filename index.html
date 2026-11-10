@@ -1,0 +1,370 @@
+html_content = """<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Pomppukeppi</title>
+<style>
+html,body{margin:0;height:100%;background:#0b1020;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+body{display:flex;align-items:center;justify-content:center}
+canvas{display:block;background:#7ad0ff;outline:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const W=360,H=640,GOAL=2000,PX=10;           // PX = pikseliä per metri
+const G=0.45,JUMP=12.5,BIRD_B=17,PLANE_B=24;  // fysiikka
+const BUF=18,CD=42;
+const ITEMS=[
+ {id:'stick',name:'Parempi keppi',desc:'Hyppy korkeammalle',costs:[20,40,70,110,160]},
+ {id:'spring',name:'Boostijousi',desc:'Lintu- ja lentokoneboostit vahvempia',costs:[30,60,100,150]},
+ {id:'rate',name:'Nopea lataus',desc:'Suojapainike latautuu nopeammin',costs:[25,50,80,120]},
+ {id:'shield',name:'Suojakilpi',desc:'Torjuu yhden putoamisen (max 3)',costs:[25,25,25]}
+];
+let save={coins:0,stick:0,spring:0,rate:0,shield:0};
+try{Object.assign(save,JSON.parse(localStorage.getItem('pomppukeppi')||'{}'));}catch(e){}
+function persist(){try{localStorage.setItem('pomppukeppi',JSON.stringify(save));}catch(e){}}
+const jumpV=()=>JUMP+.6*save.stick,boostMul=()=>1+.09*save.spring,cdV=()=>CD-5*save.rate;                           // ponnistuksen ajoitusikkuna ja latausaika (ruutuja)
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let scale=1;
+function resize(){
+  const w=Math.min(innerWidth,innerHeight*W/H),h=w*H/W,d=devicePixelRatio||1;
+  cv.style.width=w+'px';cv.style.height=h+'px';
+  cv.width=Math.round(w*d);cv.height=Math.round(h*d);scale=cv.width/W;
+}
+addEventListener('resize',resize);resize();
+
+/* ---------- Syötteet ---------- */
+const keys={};let tilt=null,touchL=false,touchR=false,sensorsOn=false,asking=false;
+const KEYMAP={ArrowLeft:'L',KeyA:'L',ArrowRight:'R',KeyD:'R',Space:'J',ArrowUp:'J',KeyW:'J'};
+function onKey(e,down){
+  if(down&&state==='shop'){
+    if(/^Digit[1-4]$/.test(e.code)){buy(+e.code[5]-1);e.preventDefault();return;}
+    if(e.code==='Escape'||e.code==='Enter'){state='start';return;}
+  }
+  const k=KEYMAP[e.code]||(e.key==='ArrowLeft'?'L':e.key==='ArrowRight'?'R':e.key===' '?'J':null);
+  if(!k)return;
+  e.preventDefault();
+  if(down){
+    if(e.repeat)return;
+    keys[k]=true;
+    if(k==='J')action();
+    else if(state!=='play'&&state!=='shop')action();   // nuolet käynnistävät pelin myös
+  }else keys[k]=false;
+}
+window.addEventListener('keydown',e=>onKey(e,true),true);
+window.addEventListener('keyup',e=>onKey(e,false),true);
+window.addEventListener('blur',()=>{keys.L=keys.R=false;});
+window.focus();
+cv.tabIndex=0;cv.addEventListener('pointerdown',()=>{window.focus();cv.focus();});
+const ptrs=new Map();
+function updTouch(){let l=false,r=false;for(const x of ptrs.values()){if(x<.33)l=true;else if(x>.67)r=true;}touchL=l;touchR=r;}
+cv.addEventListener('pointerdown',e=>{
+  const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
+  ptrs.set(e.pointerId,x);updTouch();
+  enableSensors();
+  if(state==='play'){if(x>=.33&&x<=.67)action();}
+  else{
+    const px=x*W,py=(e.clientY-r.top)/r.height*H;
+    for(const b of btns)if(px>=b.x&&px<=b.x+b.w&&py>=b.y&&py<=b.y+b.h){b.fn();break;}
+  }
+  e.preventDefault();
+});
+['pointerup','pointercancel','pointerleave'].forEach(n=>cv.addEventListener(n,e=>{ptrs.delete(e.pointerId);updTouch();}));
+cv.addEventListener('click',enableSensors);
+async function enableSensors(){
+  if(sensorsOn||asking)return;asking=true;
+  try{
+    const reqs=[];
+    if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission)reqs.push(DeviceOrientationEvent.requestPermission());
+    if(window.DeviceMotionEvent&&DeviceMotionEvent.requestPermission)reqs.push(DeviceMotionEvent.requestPermission());
+    if(reqs.length){const res=await Promise.all(reqs);if(res.some(r=>r!=='granted')){asking=false;return;}}
+    addEventListener('deviceorientation',e=>{if(e.gamma!==null)tilt=e.gamma;});
+    addEventListener('devicemotion',e=>{
+      const a=e.accelerationIncludingGravity;if(!a||a.x==null)return;
+      if(Math.abs(Math.hypot(a.x,a.y,a.z)-9.81)>11)tryJump();   // ravistus
+    });
+    sensorsOn=true;
+  }catch(err){}
+  asking=false;
+}
+
+/* ---------- Peli ---------- */
+let state='start',p,clouds,enemies,texts,camY,nextY,nextBird,nextPlane,maxAlt,moonMade,moonY,tick=0,endMs=0;
+const stars=Array.from({length:70},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.4+.4}));
+function reset(){
+  p={x:W/2,y:0,vx:0,vy:-jumpV(),drop:0,buf:0,cd:0,face:1,squash:0,inv:0,shields:save.shield};
+  clouds=[{t:'n',x:W/2,y:0,w:120}];enemies=[];texts=[];
+  camY=-H*.75;nextY=0;maxAlt=0;moonMade=false;moonY=0;nextBird=30;nextPlane=140;
+  gen();
+}
+function startGame(){reset();state='play';}
+function action(){
+  if(state==='play')tryJump();
+  else if(performance.now()-endMs>600)startGame();
+}
+function tryJump(){if(state!=='play'||p.cd>0)return;p.buf=BUF;p.cd=cdV();}
+function gen(){
+  while(nextY>camY-250&&!moonMade){
+    const alt=-nextY/PX;
+    if(alt>GOAL-10){moonY=nextY-95;clouds.push({t:'m',x:W/2,y:moonY,w:W+60});moonMade=true;break;}
+    nextY-=70+Math.random()*55;
+    const x=40+Math.random()*(W-80),w=Math.max(50,72-alt/60);
+    clouds.push({t:'n',x,y:nextY,w});
+    if(alt>100&&Math.random()<.16){
+      const tx=x<W/2?x+130+Math.random()*40:x-130-Math.random()*40;
+      clouds.push({t:'s',x:tx,y:nextY+Math.random()*30-15,w:74});
+    }
+  }
+}
+function spawn(kind){
+  const dir=Math.random()<.5?1:-1,plane=kind==='plane';
+  const y=camY+80+Math.random()*H*.4;
+  enemies.push({kind,x:dir>0?-70:W+70,by:y,y,dir,speed:plane?4.4:2.2,w:plane?84:38,h:plane?30:22,t:0});
+}
+function say(s,col){texts.push({x:p.x,y:p.y-70,s,col,t:70});}
+function knock(dist,msg){
+  if(p.buf>0){p.buf=0;p.inv=30;say('Torjuit!','#8fd3ff');return;}
+  if(p.shields>0){p.shields--;p.inv=45;say('Suoja kului!','#8fd3ff');return;}
+  p.drop=dist;p.vy=Math.max(p.vy,5);say(msg,'#ff5a4a');
+}
+function hitEnemy(e,stomp){
+  e.hit=true;
+  const plane=e.kind==='plane';
+  if(stomp){
+    e.dead=true;p.vy=-(plane?PLANE_B:BIRD_B)*boostMul();p.drop=0;p.buf=0;
+    say(plane?'TUPLABOOSTI!!':'BOOSTI!',plane?'#ffd23a':'#5dff8a');
+  }else knock(plane?320:160,plane?'Lentokone! Putoat!':'Lintu! Putoat!');
+}
+function update(){
+  tick++;
+  let ax=0;
+  if(keys.L||touchL)ax-=1;
+  if(keys.R||touchR)ax+=1;
+  if(!ax&&tilt!==null){const t=Math.abs(tilt)<3?0:tilt;ax=Math.max(-1,Math.min(1,t/22));}
+  p.vx+=(ax*5.2-p.vx)*.2;if(ax)p.face=ax>0?1:-1;
+  p.x+=p.vx;if(p.x<-12)p.x=W+12;else if(p.x>W+12)p.x=-12;
+  texts.forEach(t=>{t.y-=.6;t.t--;});texts=texts.filter(t=>t.t>0);
+  if(p.squash>0)p.squash--;
+  if(state==='win'){p.vy+=G*.3;p.y+=p.vy;if(p.y>=moonY){p.y=moonY;p.vy=-5;}return;}
+  if(p.buf>0)p.buf--;if(p.cd>0)p.cd--;
+  const prev=p.y;
+  p.vy=Math.min(p.vy+G,14);p.y+=p.vy;
+  if(p.vy>0&&p.drop<=0){
+    for(const c of clouds){
+      if(c.t==='s')continue;
+      if(prev<=c.y&&p.y>=c.y&&Math.abs(p.x-c.x)<c.w/2+8){
+        p.y=c.y;
+        if(c.t==='m'){endRun(true);say('KUUSSA!','#fff');return;}
+        p.vy=-jumpV();p.squash=8;break;
+      }
+    }
+  }
+  if(p.drop>0&&p.vy>0)p.drop-=p.vy;
+  if(p.inv>0)p.inv--;
+  if(p.drop<=0){
+    for(const e of enemies){
+      if(e.hit)continue;
+      if(Math.abs(e.x-p.x)<e.w/2+9&&Math.abs(e.y-(p.y-26))<e.h/2+28){
+        const stomp=p.vy>0&&prev<=e.y+6;   // päältä hyppy = boosti ilman nappia
+        if(stomp||p.inv<=0){hitEnemy(e,stomp);break;}
+      }
+    }
+    if(p.inv<=0)for(const c of clouds){
+      if(c.t==='s'&&Math.abs(c.x-p.x)<c.w/2+6&&p.y>c.y-16&&p.y-54<c.y+26){c.zap=tick;knock(160,'Ukkospilvi! Putoat!');break;}
+    }
+  }
+  maxAlt=Math.max(maxAlt,-p.y/PX);
+  if(p.y-54<camY+H*.38)camY=p.y-54-H*.38;
+  const topAlt=-camY/PX,nearMoon=moonMade||topAlt>GOAL-40;
+  if(!nearMoon){
+    if(topAlt>=nextBird){spawn('bird');nextBird+=45+Math.random()*60;}
+    if(topAlt>=nextPlane){spawn('plane');nextPlane+=200+Math.random()*200;}
+  }
+  for(const e of enemies){
+    e.t++;e.x+=e.dir*e.speed;
+    if(e.dead)e.by+=6;
+    e.y=e.by+(e.kind==='bird'&&!e.dead?Math.sin(e.t/12)*10:0);
+  }
+  enemies=enemies.filter(e=>e.x>-120&&e.x<W+120&&e.y<camY+H+100);
+  if(tick%30===0)clouds=clouds.filter(c=>c.t==='m'||c.y<camY+H+120);
+  gen();
+  if(p.y>camY+H+70)endRun(false);
+}
+
+/* ---------- Piirto ---------- */
+const stops=[[0,[125,208,255]],[.35,[45,100,210]],[.7,[12,20,80]],[1,[3,4,18]]];
+function skyCol(t){
+  t=Math.max(0,Math.min(1,t));
+  for(let i=1;i<stops.length;i++){
+    if(t<=stops[i][0]){const a=stops[i-1],b=stops[i],k=(t-a[0])/(b[0]-a[0]);
+      return 'rgb('+a[1].map((v,j)=>Math.round(v+(b[1][j]-v)*k)).join(',')+')';}
+  }
+  return 'rgb(3,4,18)';
+}
+const LAYERS=[[0,'Troposfääri'],[.2,'Stratosfääri'],[.45,'Mesosfääri'],[.7,'Termosfääri'],[.9,'Avaruus']];
+function drawCloud(c){
+  const x=c.x,y=c.y,w=c.w;
+  if(c.t==='s'){
+    ctx.fillStyle='#4b5066';
+    ctx.beginPath();ctx.ellipse(x,y+16,w/2,10,0,0,7);ctx.fill();
+    for(const [dx,r] of [[-.27,13],[0,17],[.27,13]]){ctx.beginPath();ctx.arc(x+dx*w,y+6,r,0,7);ctx.fill();}
+    if(c.zap&&tick-c.zap<20||(tick+Math.floor(c.x))%100<12){
+      ctx.fillStyle='rgba(255,255,150,.25)';ctx.beginPath();ctx.arc(x,y+14,34,0,7);ctx.fill();
+      ctx.fillStyle='#ffe44a';ctx.beginPath();
+      ctx.moveTo(x-3,y+20);ctx.lineTo(x+6,y+20);ctx.lineTo(x+1,y+32);ctx.lineTo(x+7,y+32);ctx.lineTo(x-6,y+54);ctx.lineTo(x-3,y+37);ctx.lineTo(x-8,y+37);ctx.fill();
+    }
+    return;
+  }
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.ellipse(x,y+18,w/2,9,0,0,7);ctx.fill();
+  for(const [dx,r] of [[-.25,11],[0,14],[.25,11]]){ctx.beginPath();ctx.arc(x+dx*w,y+13,r,0,7);ctx.fill();}
+  ctx.fillStyle='rgba(150,190,230,.35)';ctx.beginPath();ctx.ellipse(x,y+23,w/2-4,4,0,0,7);ctx.fill();
+}
+function drawEnemy(e){
+  ctx.save();ctx.translate(e.x,e.y);ctx.scale(e.dir,1);
+  if(e.dead)ctx.rotate(.8);
+  if(e.kind==='bird'){
+    const wy=Math.sin(e.t*.5)*12;
+    ctx.fillStyle='#3a2a1a';ctx.beginPath();ctx.ellipse(0,0,13,7,0,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(12,-3,6,0,7);ctx.fill();
+    ctx.fillStyle='#f0a030';ctx.beginPath();ctx.moveTo(17,-4);ctx.lineTo(24,-2);ctx.lineTo(17,0);ctx.fill();
+    ctx.fillStyle='#5a432b';ctx.beginPath();ctx.moveTo(-8,-2);ctx.lineTo(4,-2);ctx.lineTo(-3,-2-wy*1.4);ctx.fill();
+    ctx.fillStyle='#3a2a1a';ctx.beginPath();ctx.moveTo(-12,0);ctx.lineTo(-22,-4);ctx.lineTo(-22,4);ctx.fill();
+  }else{
+    ctx.fillStyle='#f4f6fa';ctx.beginPath();ctx.ellipse(0,0,42,9,0,0,7);ctx.fill();
+    ctx.fillStyle='#9aa7bd';ctx.beginPath();ctx.moveTo(-6,2);ctx.lineTo(8,2);ctx.lineTo(-10,22);ctx.lineTo(-20,22);ctx.fill();
+    ctx.fillStyle='#e0483a';ctx.beginPath();ctx.moveTo(-34,-2);ctx.lineTo(-24,-2);ctx.lineTo(-36,-18);ctx.lineTo(-42,-18);ctx.fill();
+    ctx.fillStyle='#4a6a9a';for(let i=0;i<6;i++){ctx.beginPath();ctx.arc(-14+i*7,-2,2,0,7);ctx.fill();}
+    ctx.beginPath();ctx.ellipse(34,-2,6,4,0,0,7);ctx.fill();
+  }
+  ctx.restore();
+}
+function drawPlayer(){
+  ctx.save();ctx.translate(p.x,p.y);
+  if(p.buf>0){ctx.strokeStyle='rgba(255,230,90,'+(p.buf/BUF)+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-28,36,0,7);ctx.stroke();}
+  if(p.vy<-14){ctx.strokeStyle='rgba(255,200,60,.7)';ctx.lineWidth=3;
+    for(const dx of [-6,0,6]){ctx.beginPath();ctx.moveTo(dx,4);ctx.lineTo(dx,4-p.vy*1.4);ctx.stroke();}}
+  const s=p.squash/8,top=-18+s*7;
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle='#e0483a';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(0,top-4);ctx.lineTo(0,top-24);ctx.stroke();       // vartalo
+  ctx.strokeStyle='#234';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(-5,top-2);ctx.lineTo(-7,top+3);ctx.moveTo(5,top-2);ctx.lineTo(7,top+3);ctx.stroke(); // jalat
+  ctx.fillStyle='#f2c9a0';ctx.beginPath();ctx.arc(0,top-32,7,0,7);ctx.fill();
+  ctx.fillStyle='#2a5bd7';ctx.beginPath();ctx.arc(0,top-34,7,Math.PI,0);ctx.fill();
+  ctx.strokeStyle='#555';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,top);ctx.stroke();                       // keppi
+  ctx.strokeStyle='#999';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-5,top+2);
+  for(let i=0;i<5;i++)ctx.lineTo(i%2?-5:5,top+2+(i+1)*(-top-4)/6);ctx.stroke();                                              // jousi
+  ctx.strokeStyle='#555';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-8,top-16);ctx.lineTo(8,top-16);ctx.stroke();            // ohjaustanko
+  ctx.restore();
+}
+let btns=[],earned=0;
+function endRun(win){
+  state=win?'win':'dead';endMs=performance.now();
+  earned=Math.floor(maxAlt/10)+(win?100:0);
+  save.coins+=earned;save.shield=p.shields;persist();
+}
+function buy(i){
+  const it=ITEMS[i],l=save[it.id];if(l>=it.costs.length)return;
+  const c=it.costs[l];if(save.coins<c)return;
+  save.coins-=c;save[it.id]=l+1;persist();
+}
+function button(label,x,y,w,h,fn,on=true){
+  ctx.fillStyle=on?'#2a7de1':'#555';ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='#fff';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.fillText(label,x+w/2,y+h/2+5);
+  if(on)btns.push({x,y,w,h,fn});
+}
+function play(){if(performance.now()-endMs>400)startGame();}
+function panel(title,lines){
+  ctx.fillStyle='rgba(0,0,20,.65)';ctx.fillRect(20,120,W-40,380);
+  ctx.fillStyle='#fff';ctx.textAlign='center';
+  ctx.font='bold 30px sans-serif';ctx.fillText(title,W/2,166);
+  ctx.font='14px sans-serif';
+  lines.forEach((l,i)=>ctx.fillText(l,W/2,202+i*21));
+  button('Pelaa',40,446,130,40,play);
+  button('Kauppa',190,446,130,40,()=>{state='shop';});
+}
+function draw(){
+  ctx.setTransform(scale,0,0,scale,0,0);
+  const altC=Math.max(0,-(camY+H/2)/PX),t=altC/GOAL;
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,skyCol(t+.12));g.addColorStop(1,skyCol(t-.05));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const sa=Math.max(0,Math.min(1,(t-.4)*2));
+  if(sa>0){ctx.fillStyle='rgba(255,255,255,'+sa+')';
+    for(const s of stars){const y=((s.y-camY*.05)%H+H)%H;ctx.beginPath();ctx.arc(s.x,y,s.r,0,7);ctx.fill();}}
+  ctx.save();ctx.translate(0,-camY);
+  if(moonMade){
+    const cy=moonY+430,gl=ctx.createRadialGradient(W/2,cy,430,W/2,cy,520);
+    gl.addColorStop(0,'rgba(255,255,220,.35)');gl.addColorStop(1,'rgba(255,255,220,0)');
+    ctx.fillStyle=gl;ctx.beginPath();ctx.arc(W/2,cy,520,0,7);ctx.fill();
+    ctx.fillStyle='#dcdcd2';ctx.beginPath();ctx.arc(W/2,cy,430,0,7);ctx.fill();
+    ctx.fillStyle='#bdbdb2';
+    for(const [dx,dy,r] of [[-90,60,26],[70,90,18],[10,150,34],[-150,130,14],[140,40,12]]){ctx.beginPath();ctx.arc(W/2+dx,moonY+dy,r,0,7);ctx.fill();}
+  }
+  for(const c of clouds)if(c.t!=='m')drawCloud(c);
+  for(const e of enemies)drawEnemy(e);
+  drawPlayer();
+  ctx.textAlign='center';ctx.font='bold 18px sans-serif';
+  for(const tx of texts){ctx.fillStyle=tx.col;ctx.globalAlpha=Math.min(1,tx.t/20);ctx.fillText(tx.s,tx.x,tx.y);}
+  ctx.globalAlpha=1;
+  ctx.restore();
+  // HUD
+  const alt=Math.floor(Math.max(0,maxAlt)),prog=Math.min(1,maxAlt/GOAL);
+  ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillRect(0,0,W,26);
+  ctx.fillStyle='#ffd23a';ctx.fillRect(0,0,W*prog,4);
+  ctx.fillStyle='#fff';ctx.font='bold 15px sans-serif';ctx.textAlign='left';ctx.fillText('▲ '+alt+' m / '+GOAL+' m',8,20);
+  let ln=LAYERS[0][1];for(const l of LAYERS)if(t>=l[0])ln=l[1];
+  ctx.textAlign='right';ctx.font='13px sans-serif';ctx.fillText(ln,W-8,19);
+  if(state==='play'){
+    const k=1-p.cd/cdV();
+    if(p.shields>0){ctx.fillStyle='#8fd3ff';ctx.textAlign='left';ctx.font='13px sans-serif';ctx.fillText('Suojia: '+p.shields,8,44);}
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W/2-40,H-18,80,8);
+    ctx.fillStyle=k>=1?'#5dff8a':'#ffd23a';ctx.fillRect(W/2-40,H-18,80*k,8);
+  }
+  ctx.textAlign='center';btns=[];
+  if(state==='start')panel('POMPPUKEPPI',[
+    'Kallista puhelinta (tai nuolet ← →)','Suoja / torjunta: ravista / välilyönti /','napauta ruudun keskeltä','',
+    'Hyppää lintujen ja lentokoneiden PÄÄLLE:','boosti! (lentokone = tuplaboosti)','Osuma sivulta tai alta pudottaa. Suoja','torjuu osumat (myös ukkospilvet)','Tavoite: kuu ('+GOAL+' m)   Kolikot: '+save.coins]);
+  else if(state==='dead')panel('Putosit!',['Korkein: '+alt+' m','Saat kolikoita: +'+earned,'Kolikot yhteensä: '+save.coins]);
+  else if(state==='win')panel('KUUSSA!',['Pääsit '+GOAL+' metrin korkeuteen!','Saat kolikoita: +'+earned,'Kolikot yhteensä: '+save.coins]);
+  else if(state==='shop'){
+    ctx.fillStyle='rgba(0,0,20,.8)';ctx.fillRect(10,40,W-20,H-80);
+    ctx.fillStyle='#fff';ctx.font='bold 26px sans-serif';ctx.fillText('KAUPPA',W/2,78);
+    ctx.fillStyle='#ffd23a';ctx.font='bold 16px sans-serif';ctx.fillText('Kolikot: '+save.coins,W/2,104);
+    ITEMS.forEach((it,i)=>{
+      const y=124+i*104,l=save[it.id],max=it.costs.length,full=l>=max,c=it.costs[l];
+      ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 15px sans-serif';
+      ctx.fillText((i+1)+'. '+it.name+'  ('+(it.id==='shield'?'omistat '+l:'taso '+l+'/'+max)+')',24,y+16);
+      ctx.font='13px sans-serif';ctx.fillStyle='#cfe';ctx.fillText(it.desc,24,y+36);
+      button(full?'Täynnä':'Osta ('+c+' kolikkoa)',24,y+48,W-48,34,()=>buy(i),!full&&save.coins>=c);
+    });
+    button('Takaisin',24,H-100,W-48,34,()=>{state='start';});
+  }
+}
+reset();
+let last=0,acc=0;
+function loop(now){
+  acc+=Math.min(100,now-last);last=now;
+  while(acc>=16.667){if(state==='play'||state==='win')update();acc-=16.667;}
+  draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>"""
+
+wrangler_content = """{
+  "name": "pomppukeppi",
+  "compatibility_date": "2026-11-10",
+  "assets": {
+    "directory": "."
+  }
+}"""
+
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html_content)
+
+with open("wrangler.jsonc", "w", encoding="utf-8") as f:
+    f.write(wrangler_content)
+
+print("Files created successfully.")
