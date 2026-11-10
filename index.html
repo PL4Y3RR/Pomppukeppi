@@ -16,7 +16,7 @@ canvas{display:block;background:#7ad0ff;outline:none}
 <body>
 <canvas id="c"></canvas>
 <script>
-const W=480,H=720,GOAL=2500,PX=10;           // W & H kasvatettu laajemman näkymän aikaansaamiseksi
+const W=480,H=720,GOAL=2500,PX=10;
 const G=0.45,JUMP=13.0,BIRD_B=17,PLANE_B=24;
 const BUF=18,CD=42;
 const ITEMS=[
@@ -71,7 +71,6 @@ window.addEventListener('blur',()=>{keys.L=keys.R=false;});
 window.focus();
 cv.tabIndex=0;cv.addEventListener('pointerdown',()=>{window.focus();cv.focus();});
 
-// Kosketusnäppäimet ruudun alareunassa
 let touchL=false, touchR=false;
 const btnsUI = {
   left:  {x: 20,  y: H - 80, w: 70, h: 60},
@@ -117,7 +116,7 @@ const stars=Array.from({length:90},()=>({x:Math.random()*W,y:Math.random()*H,r:M
 
 function reset(){
   p={x:W/2,y:0,vx:0,vy:-jumpV(),drop:0,buf:0,cd:0,face:1,squash:0,inv:0,shields:save.shield, oxygen:100};
-  clouds=[{t:'n',x:W/2,y:0,w:90,vx:0}]; enemies=[]; pickups=[]; texts=[];
+  clouds=[{t:'n',x:W/2,y:0,w:100,vx:0}]; enemies=[]; pickups=[]; texts=[];
   camY=-H*.75;nextY=0;maxAlt=0;moonMade=false;moonY=0;nextBird=25;nextPlane=100;
   gen();
 }
@@ -132,21 +131,19 @@ function gen(){
   while(nextY>camY-300&&!moonMade){
     const alt=-nextY/PX;
     if(alt>GOAL-10){moonY=nextY-95;clouds.push({t:'m',x:W/2,y:moonY,w:W+60,vx:0});moonMade=true;break;}
-    nextY-=50+Math.random()*45;
+    nextY-=55+Math.random()*50;
     
-    // Generoidaan useampia pilviä rinnakkain useammille reiteille
     const count = Math.random() < 0.6 ? 2 : 1;
     for(let i=0; i<count; i++){
-      const x=30+Math.random()*(W-60), w=Math.max(45, 60-alt/80);
+      const x=40+Math.random()*(W-80), w=Math.max(50, 72-alt/60);
       const moving = alt > 40 && Math.random() < 0.35;
       const vx = moving ? (Math.random() < 0.5 ? 1 : -1) * (0.8 + Math.random()*0.8) : 0;
       
       const isThunder = alt > 150 && alt < 1600 && Math.random() < 0.15;
       clouds.push({t: isThunder ? 's' : 'n', x, y: nextY, w, vx});
 
-      // Lisätään kerättäviä esineitä
       if(Math.random() < 0.22){
-        const pType = (alt >= 1200 && Math.random() < 0.5) ? 'oxygen' : (Math.random() < 0.15 ? 'shield' : 'coin');
+        const pType = (alt >= 1400 && Math.random() < 0.5) ? 'oxygen' : (Math.random() < 0.15 ? 'shield' : 'coin');
         pickups.push({t: pType, x: x + (Math.random()*30 - 15), y: nextY - 25, got: false});
       }
     }
@@ -155,11 +152,11 @@ function gen(){
 
 function spawn(kind){
   const dir=Math.random()<.5?1:-1, plane=kind==='plane';
-  const y=camY+60+Math.random()*H*.4;
-  enemies.push({kind,x:dir>0?-50:W+50,by:y,y,dir,speed:plane?3.8:2.0,w:plane?50:28,h:plane?22:16,t:0});
+  const y=camY+70+Math.random()*H*.4;
+  enemies.push({kind,x:dir>0?-70:W+70,by:y,y,dir,speed:plane?4.2:2.1,w:plane?74:34,h:plane?26:18,t:0});
 }
 
-function say(s,col){texts.push({x:p.x,y:p.y-50,s,col,t:70});}
+function say(s,col){texts.push({x:p.x,y:p.y-70,s,col,t:70});}
 function knock(dist,msg){
   if(p.buf>0){p.buf=0;p.inv=30;say('Torjuit!','#8fd3ff');return;}
   if(p.shields>0){p.shields--;p.inv=45;say('Suoja kului!','#8fd3ff');return;}
@@ -172,7 +169,7 @@ function hitEnemy(e,stomp){
   if(stomp){
     e.dead=true;p.vy=-(plane?PLANE_B:BIRD_B)*boostMul();p.drop=0;p.buf=0;
     say(plane?'TUPLABOOSTI!!':'BOOSTI!',plane?'#ffd23a':'#5dff8a');
-  }else knock(plane?300:150, plane ? 'Osuma! Putoat!' : 'Osuma! Putoat!');
+  }else knock(plane?320:160, plane ? 'Lentokone! Putoat!' : 'Lintu! Putoat!');
 }
 
 function update(){
@@ -181,8 +178,8 @@ function update(){
   if(keys.L||touchL)ax-=1;
   if(keys.R||touchR)ax+=1;
   
-  p.vx+=(ax*4.8-p.vx)*.2;if(ax)p.face=ax>0?1:-1;
-  p.x+=p.vx;if(p.x<-10)p.x=W+10;else if(p.x>W+10)p.x=-10;
+  p.vx+=(ax*5.2-p.vx)*.2;if(ax)p.face=ax>0?1:-1;
+  p.x+=p.vx;if(p.x<-12)p.x=W+12;else if(p.x>W+12)p.x=-12;
   
   texts.forEach(t=>{t.y-=.6;t.t--;});texts=texts.filter(t=>t.t>0);
   if(p.squash>0)p.squash--;
@@ -191,9 +188,8 @@ function update(){
   
   const currentAlt = Math.max(0, -p.y/PX);
   
-  // Happijärjestelmä avaruudessa
   if(currentAlt >= 1400){
-    p.oxygen -= 0.06;
+    p.oxygen -= 0.05;
     if(p.oxygen <= 0){
       p.oxygen = 0;
       knock(200, 'Happi loppui!');
@@ -201,9 +197,8 @@ function update(){
   }
 
   const prev=p.y;
-  p.vy=Math.min(p.vy+G,13);p.y+=p.vy;
+  p.vy=Math.min(p.vy+G,14);p.y+=p.vy;
   
-  // Sivuttain liikkuvat pilvet
   for(const c of clouds){
     if(c.vx){
       c.x += c.vx;
@@ -214,7 +209,7 @@ function update(){
   if(p.vy>0&&p.drop<=0){
     for(const c of clouds){
       if(c.t==='s')continue;
-      if(prev<=c.y&&p.y>=c.y&&Math.abs(p.x-c.x)<c.w/2+6){
+      if(prev<=c.y&&p.y>=c.y&&Math.abs(p.x-c.x)<c.w/2+8){
         p.y=c.y;
         if(c.t==='m'){endRun(true);say('KUUSSA!','#fff');return;}
         p.vy=-jumpV();p.squash=8;break;
@@ -222,9 +217,8 @@ function update(){
     }
   }
   
-  // Kerättävät esineet
   for(const item of pickups){
-    if(!item.got && Math.hypot(p.x - item.x, (p.y-20) - item.y) < 22){
+    if(!item.got && Math.hypot(p.x - item.x, (p.y-26) - item.y) < 24){
       item.got = true;
       if(item.t === 'coin'){ save.coins += 5; say('+5 Kolikkoa!', '#ffd23a'); }
       else if(item.t === 'shield'){ p.shields++; say('+1 Suoja!', '#8fd3ff'); }
@@ -238,37 +232,37 @@ function update(){
   if(p.drop<=0){
     for(const e of enemies){
       if(e.hit)continue;
-      if(Math.abs(e.x-p.x)<e.w/2+7&&Math.abs(e.y-(p.y-20))<e.h/2+20){
+      if(Math.abs(e.x-p.x)<e.w/2+9&&Math.abs(e.y-(p.y-26))<e.h/2+28){
         const stomp=p.vy>0&&prev<=e.y+6;
         if(stomp||p.inv<=0){hitEnemy(e,stomp);break;}
       }
     }
     if(p.inv<=0)for(const c of clouds){
-      if(c.t==='s'&&Math.abs(c.x-p.x)<c.w/2+5&&p.y>c.y-14&&p.y-45<c.y+20){
-        c.zap=tick; knock(160, currentAlt >= 1400 ? 'Meteori!' : 'Ukkospilvi!'); break;
+      if(c.t==='s'&&Math.abs(c.x-p.x)<c.w/2+6&&p.y>c.y-16&&p.y-54<c.y+26){
+        c.zap=tick; knock(160, currentAlt >= 1400 ? 'Meteori! Putoat!' : 'Ukkospilvi! Putoat!'); break;
       }
     }
   }
   
   maxAlt=Math.max(maxAlt, currentAlt);
-  if(p.y-45<camY+H*.38)camY=p.y-45-H*.38;
+  if(p.y-54<camY+H*.38)camY=p.y-54-H*.38;
   
   const topAlt=-camY/PX, nearMoon=moonMade||topAlt>GOAL-40;
   if(!nearMoon){
-    if(topAlt>=nextBird){spawn('bird');nextBird+=35+Math.random()*50;}
-    if(topAlt>=nextPlane){spawn('plane');nextPlane+=150+Math.random()*160;}
+    if(topAlt>=nextBird){spawn('bird');nextBird+=40+Math.random()*55;}
+    if(topAlt>=nextPlane){spawn('plane');nextPlane+=180+Math.random()*180;}
   }
   
   for(const e of enemies){
     e.t++;e.x+=e.dir*e.speed;
-    if(e.dead)e.by+=5;
-    e.y=e.by+(e.kind==='bird'&&!e.dead?Math.sin(e.t/12)*8:0);
+    if(e.dead)e.by+=6;
+    e.y=e.by+(e.kind==='bird'&&!e.dead?Math.sin(e.t/12)*10:0);
   }
-  enemies=enemies.filter(e=>e.x>-100&&e.x<W+100&&e.y<camY+H+80);
-  pickups=pickups.filter(pk=>!pk.got && pk.y<camY+H+80);
-  if(tick%30===0)clouds=clouds.filter(c=>c.t==='m'||c.y<camY+H+100);
+  enemies=enemies.filter(e=>e.x>-120&&e.x<W+120&&e.y<camY+H+100);
+  pickups=pickups.filter(pk=>!pk.got && pk.y<camY+H+100);
+  if(tick%30===0)clouds=clouds.filter(c=>c.t==='m'||c.y<camY+H+120);
   gen();
-  if(p.y>camY+H+60)endRun(false);
+  if(p.y>camY+H+70)endRun(false);
 }
 
 /* ---------- Piirto ---------- */
@@ -285,27 +279,28 @@ const LAYERS=[[0,'Troposfääri'],[.25,'Stratosfääri'],[.55,'Mesosfääri'],[.
 
 function drawCloud(c){
   const x=c.x, y=c.y, w=c.w, alt = -y/PX;
-  if(alt >= 1400){ // Avaruus: meteori / avaruusromu
-    ctx.fillStyle = '#6e655f';
-    ctx.beginPath(); ctx.arc(x, y+10, w/2.8, 0, 7); ctx.fill();
-    ctx.fillStyle = '#4a433e';
-    ctx.beginPath(); ctx.arc(x-5, y+6, 5, 0, 7); ctx.fill();
+  if(alt >= 1400){ // Meteori / avaruusromu
+    ctx.fillStyle='#6e655f';
+    ctx.beginPath();ctx.arc(x,y+14,w/2.5,0,7);ctx.fill();
+    ctx.fillStyle='#4a433e';
+    ctx.beginPath();ctx.arc(x-6,y+8,6,0,7);ctx.fill();
     return;
   }
   if(c.t==='s'){
     ctx.fillStyle='#4b5066';
-    ctx.beginPath();ctx.ellipse(x,y+12,w/2,8,0,0,7);ctx.fill();
-    for(const [dx,r] of [[-.27,10],[0,13],[.27,10]]){ctx.beginPath();ctx.arc(x+dx*w,y+4,r,0,7);ctx.fill();}
+    ctx.beginPath();ctx.ellipse(x,y+16,w/2,10,0,0,7);ctx.fill();
+    for(const [dx,r] of [[-.27,13],[0,17],[.27,13]]){ctx.beginPath();ctx.arc(x+dx*w,y+6,r,0,7);ctx.fill();}
     if(c.zap&&tick-c.zap<20||(tick+Math.floor(c.x))%100<12){
-      ctx.fillStyle='rgba(255,255,150,.25)';ctx.beginPath();ctx.arc(x,y+10,26,0,7);ctx.fill();
+      ctx.fillStyle='rgba(255,255,150,.25)';ctx.beginPath();ctx.arc(x,y+14,34,0,7);ctx.fill();
       ctx.fillStyle='#ffe44a';ctx.beginPath();
-      ctx.moveTo(x-2,y+14);ctx.lineTo(x+4,y+14);ctx.lineTo(x,y+24);ctx.lineTo(x+5,y+24);ctx.lineTo(x-4,y+40);ctx.lineTo(x-2,y+28);ctx.lineTo(x-6,y+28);ctx.fill();
+      ctx.moveTo(x-3,y+20);ctx.lineTo(x+6,y+20);ctx.lineTo(x+1,y+32);ctx.lineTo(x+7,y+32);ctx.lineTo(x-6,y+54);ctx.lineTo(x-3,y+37);ctx.lineTo(x-8,y+37);ctx.fill();
     }
     return;
   }
   ctx.fillStyle='#fff';
-  ctx.beginPath();ctx.ellipse(x,y+14,w/2,7,0,0,7);ctx.fill();
-  for(const [dx,r] of [[-.25,8],[0,11],[.25,8]]){ctx.beginPath();ctx.arc(x+dx*w,y+10,r,0,7);ctx.fill();}
+  ctx.beginPath();ctx.ellipse(x,y+18,w/2,9,0,0,7);ctx.fill();
+  for(const [dx,r] of [[-.25,11],[0,14],[.25,11]]){ctx.beginPath();ctx.arc(x+dx*w,y+13,r,0,7);ctx.fill();}
+  ctx.fillStyle='rgba(150,190,230,.35)';ctx.beginPath();ctx.ellipse(x,y+23,w/2-4,4,0,0,7);ctx.fill();
 }
 
 function drawEnemy(e){
@@ -314,29 +309,39 @@ function drawEnemy(e){
   const alt = -e.y/PX;
 
   if(e.kind==='bird'){
-    if(alt < 600){ // Pikkulintu
-      ctx.fillStyle='#3a2a1a';ctx.beginPath();ctx.ellipse(0,0,9,5,0,0,7);ctx.fill();
-      ctx.beginPath();ctx.arc(8,-2,4,0,7);ctx.fill();
-      ctx.fillStyle='#f0a030';ctx.beginPath();ctx.moveTo(12,-3);ctx.lineTo(17,-1);ctx.lineTo(12,0);ctx.fill();
+    if(alt < 600){ // Pikkulintu (alkuperäinen tarkka piirto)
+      const wy=Math.sin(e.t*.5)*10;
+      ctx.fillStyle='#3a2a1a';ctx.beginPath();ctx.ellipse(0,0,11,6,0,0,7);ctx.fill();
+      ctx.beginPath();ctx.arc(10,-2,5,0,7);ctx.fill();
+      ctx.fillStyle='#f0a030';ctx.beginPath();ctx.moveTo(15,-3);ctx.lineTo(21,-1);ctx.lineTo(15,0);ctx.fill();
+      ctx.fillStyle='#5a432b';ctx.beginPath();ctx.moveTo(-6,-2);ctx.lineTo(3,-2);ctx.lineTo(-2,-2-wy*1.2);ctx.fill();
     } else { // Kotka
-      ctx.fillStyle='#2b1a0e';ctx.beginPath();ctx.ellipse(0,0,14,6,0,0,7);ctx.fill();
-      ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(12,-2,5,0,7);ctx.fill();
-      ctx.fillStyle='#f0b000';ctx.beginPath();ctx.moveTo(16,-2);ctx.lineTo(22,1);ctx.lineTo(16,2);ctx.fill();
+      ctx.fillStyle='#2b1a0e';ctx.beginPath();ctx.ellipse(0,0,15,7,0,0,7);ctx.fill();
+      ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(13,-3,6,0,7);ctx.fill();
+      ctx.fillStyle='#f0b000';ctx.beginPath();ctx.moveTo(18,-3);ctx.lineTo(25,1);ctx.lineTo(18,3);ctx.fill();
+      ctx.fillStyle='#402b1c';ctx.beginPath();ctx.moveTo(-10,-2);ctx.lineTo(5,-2);ctx.lineTo(-4,-12);ctx.fill();
     }
   } else {
-    if(alt < 700){ // Potkurikone
-      ctx.fillStyle='#d9534f';ctx.beginPath();ctx.ellipse(0,0,24,6,0,0,7);ctx.fill();
-      ctx.fillStyle='#333';ctx.fillRect(-22,-3,4,6);
+    if(alt < 700){ // Potkurikone (alkuperäinen tarkka piirto)
+      ctx.fillStyle='#f4f6fa';ctx.beginPath();ctx.ellipse(0,0,36,8,0,0,7);ctx.fill();
+      ctx.fillStyle='#9aa7bd';ctx.beginPath();ctx.moveTo(-5,2);ctx.lineTo(7,2);ctx.lineTo(-8,18);ctx.lineTo(-17,18);ctx.fill();
+      ctx.fillStyle='#e0483a';ctx.beginPath();ctx.moveTo(-28,-2);ctx.lineTo(-20,-2);ctx.lineTo(-30,-15);ctx.lineTo(-35,-15);ctx.fill();
+      ctx.fillStyle='#4a6a9a';for(let i=0;i<5;i++){ctx.beginPath();ctx.arc(-12+i*6,-2,2,0,7);ctx.fill();}
+      ctx.beginPath();ctx.ellipse(28,-2,5,3,0,0,7);ctx.fill();
     } else if(alt < 1400){ // Suihkukone
-      ctx.fillStyle='#e6e9ed';ctx.beginPath();ctx.ellipse(0,0,32,7,0,0,7);ctx.fill();
-      ctx.fillStyle='#4a90e2';ctx.beginPath();ctx.moveTo(-10,0);ctx.lineTo(5,0);ctx.lineTo(-12,14);ctx.fill();
+      ctx.fillStyle='#e6e9ed';ctx.beginPath();ctx.ellipse(0,0,38,8,0,0,7);ctx.fill();
+      ctx.fillStyle='#656d78';ctx.beginPath();ctx.moveTo(-8,2);ctx.lineTo(10,2);ctx.lineTo(-12,20);ctx.lineTo(-24,20);ctx.fill();
+      ctx.fillStyle='#4a90e2';for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(-10+i*6,0,1.5,0,7);ctx.fill();}
+      ctx.fillStyle='#da4453';ctx.beginPath();ctx.moveTo(-32,-2);ctx.lineTo(-22,-2);ctx.lineTo(-34,-12);ctx.fill();
     } else { // Raketti / UFO
       if(Math.floor(e.x)%2===0){ // Raketti
-        ctx.fillStyle='#f5f7fa';ctx.beginPath();ctx.ellipse(0,0,22,7,0,0,7);ctx.fill();
-        ctx.fillStyle='#ed5565';ctx.beginPath();ctx.moveTo(15,-7);ctx.lineTo(24,0);ctx.lineTo(15,7);ctx.fill();
+        ctx.fillStyle='#f5f7fa';ctx.beginPath();ctx.ellipse(0,0,26,8,0,0,7);ctx.fill();
+        ctx.fillStyle='#ed5565';ctx.beginPath();ctx.moveTo(18,-8);ctx.lineTo(28,0);ctx.lineTo(18,8);ctx.fill();
+        ctx.fillStyle='#4fc1e9';ctx.beginPath();ctx.arc(5,0,3,0,7);ctx.fill();
       } else { // UFO
-        ctx.fillStyle='#a0d468';ctx.beginPath();ctx.arc(0,-3,7,0,7);ctx.fill();
-        ctx.fillStyle='#48cfad';ctx.beginPath();ctx.ellipse(0,2,18,5,0,0,7);ctx.fill();
+        ctx.fillStyle='#a0d468';ctx.beginPath();ctx.arc(0,-4,8,0,7);ctx.fill();
+        ctx.fillStyle='#48cfad';ctx.beginPath();ctx.ellipse(0,2,22,6,0,0,7);ctx.fill();
+        ctx.fillStyle='#ffce54';for(let i=0;i<5;i++){ctx.beginPath();ctx.arc(-12+i*6,3,1.5,0,7);ctx.fill();}
       }
     }
   }
@@ -346,14 +351,14 @@ function drawEnemy(e){
 function drawPickup(pk){
   ctx.save(); ctx.translate(pk.x, pk.y);
   if(pk.t === 'coin'){
-    ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill();
-    ctx.fillStyle = '#e5b800'; ctx.font='bold 9px sans-serif'; ctx.textAlign='center'; ctx.fillText('$',0,3);
+    ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
+    ctx.fillStyle = '#e5b800'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center'; ctx.fillText('$',0,3.5);
   } else if(pk.t === 'shield'){
-    ctx.fillStyle = '#5d9cec'; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font='bold 9px sans-serif'; ctx.textAlign='center'; ctx.fillText('S',0,3);
+    ctx.fillStyle = '#5d9cec'; ctx.beginPath(); ctx.arc(0,0,9,0,7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center'; ctx.fillText('S',0,3.5);
   } else if(pk.t === 'oxygen'){
-    ctx.fillStyle = '#4afebe'; ctx.fillRect(-4,-7,8,14);
-    ctx.fillStyle = '#fff'; ctx.fillRect(-2,-9,4,2);
+    ctx.fillStyle = '#4afebe'; ctx.fillRect(-5,-8,10,16);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-2,-10,4,2);
   }
   ctx.restore();
 }
@@ -361,24 +366,29 @@ function drawPickup(pk){
 function drawPlayer(){
   ctx.save();ctx.translate(p.x,p.y);
   const alt = -p.y/PX;
-  if(p.buf>0){ctx.strokeStyle='rgba(255,230,90,'+(p.buf/BUF)+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-20,28,0,7);ctx.stroke();}
-  
-  const s=p.squash/8,top=-14+s*5;
+  if(p.buf>0){ctx.strokeStyle='rgba(255,230,90,'+(p.buf/BUF)+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-28,36,0,7);ctx.stroke();}
+  if(p.vy<-14){ctx.strokeStyle='rgba(255,200,60,.7)';ctx.lineWidth=3;
+    for(const dx of [-6,0,6]){ctx.beginPath();ctx.moveTo(dx,4);ctx.lineTo(dx,4-p.vy*1.4);ctx.stroke();}}
+    
+  const s=p.squash/8,top=-18+s*7;
   ctx.lineCap='round';ctx.lineJoin='round';
   
-  // Vartalo & Asu
   if(alt >= 1400){ // Avaruuspuku
-    ctx.strokeStyle='#e6e9ed';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(0,top-2);ctx.lineTo(0,top-18);ctx.stroke();
-    ctx.fillStyle='#4a90e2';ctx.beginPath();ctx.arc(0,top-22,7,0,7);ctx.fill(); // Kypärä
-    ctx.fillStyle='#ffce54';ctx.beginPath();ctx.arc(2*p.face,top-22,4,0,7);ctx.fill(); // Visiiri
-  } else {
-    ctx.strokeStyle='#e0483a';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(0,top-2);ctx.lineTo(0,top-18);ctx.stroke();
-    ctx.fillStyle='#f2c9a0';ctx.beginPath();ctx.arc(0,top-24,5,0,7);ctx.fill();
-    ctx.fillStyle='#2a5bd7';ctx.beginPath();ctx.arc(0,top-26,5,Math.PI,0);ctx.fill();
+    ctx.strokeStyle='#e6e9ed';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(0,top-4);ctx.lineTo(0,top-24);ctx.stroke();
+    ctx.strokeStyle='#aab2bd';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(-5,top-2);ctx.lineTo(-7,top+3);ctx.moveTo(5,top-2);ctx.lineTo(7,top+3);ctx.stroke();
+    ctx.fillStyle='#4a90e2';ctx.beginPath();ctx.arc(0,top-30,8,0,7);ctx.fill(); // Kypärä
+    ctx.fillStyle='#ffce54';ctx.beginPath();ctx.arc(3*p.face,top-30,5,0,7);ctx.fill(); // Visiiri
+  } else { // Alkuperäinen tarkka ukkeli
+    ctx.strokeStyle='#e0483a';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(0,top-4);ctx.lineTo(0,top-24);ctx.stroke();
+    ctx.strokeStyle='#234';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(-5,top-2);ctx.lineTo(-7,top+3);ctx.moveTo(5,top-2);ctx.lineTo(7,top+3);ctx.stroke();
+    ctx.fillStyle='#f2c9a0';ctx.beginPath();ctx.arc(0,top-32,7,0,7);ctx.fill();
+    ctx.fillStyle='#2a5bd7';ctx.beginPath();ctx.arc(0,top-34,7,Math.PI,0);ctx.fill();
   }
   
-  // Keppi & Jousi
-  ctx.strokeStyle='#555';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,top);ctx.stroke();
+  ctx.strokeStyle='#555';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,top);ctx.stroke();
+  ctx.strokeStyle='#999';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-5,top+2);
+  for(let i=0;i<5;i++)ctx.lineTo(i%2?-5:5,top+2+(i+1)*(-top-4)/6);ctx.stroke();
+  ctx.strokeStyle='#555';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-8,top-16);ctx.lineTo(8,top-16);ctx.stroke();
   ctx.restore();
 }
 
@@ -415,11 +425,8 @@ function panel(title,lines){
 
 function drawUIControls(){
   ctx.fillStyle='rgba(255,255,255,0.2)';
-  // Vasen
   ctx.fillRect(btnsUI.left.x, btnsUI.left.y, btnsUI.left.w, btnsUI.left.h);
-  // Oikea
   ctx.fillRect(btnsUI.right.x, btnsUI.right.y, btnsUI.right.w, btnsUI.right.h);
-  // Suoja
   ctx.fillStyle = p.cd > 0 ? 'rgba(255,100,100,0.2)' : 'rgba(100,255,100,0.3)';
   ctx.fillRect(btnsUI.action.x, btnsUI.action.y, btnsUI.action.w, btnsUI.action.h);
 
@@ -451,16 +458,15 @@ function draw(){
   for(const e of enemies)drawEnemy(e);
   drawPlayer();
   
-  ctx.textAlign='center';ctx.font='bold 16px sans-serif';
+  ctx.textAlign='center';ctx.font='bold 18px sans-serif';
   for(const tx of texts){ctx.fillStyle=tx.col;ctx.globalAlpha=Math.min(1,tx.t/20);ctx.fillText(tx.s,tx.x,tx.y);}
   ctx.globalAlpha=1;
   ctx.restore();
   
-  // HUD
   const alt=Math.floor(Math.max(0,maxAlt)),prog=Math.min(1,maxAlt/GOAL);
   ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(0,0,W,30);
   ctx.fillStyle='#ffd23a';ctx.fillRect(0,0,W*prog,4);
-  ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.textAlign='left';ctx.fillText('▲ '+alt+' m / '+GOAL+' m',8,22);
+  ctx.fillStyle='#fff';ctx.font='bold 15px sans-serif';ctx.textAlign='left';ctx.fillText('▲ '+alt+' m / '+GOAL+' m',8,22);
   
   let ln=LAYERS[0][1];for(const l of LAYERS)if(t>=l[0])ln=l[1];
   ctx.textAlign='right';ctx.font='13px sans-serif';ctx.fillText(ln,W-8,21);
@@ -468,7 +474,6 @@ function draw(){
   if(state==='play'){
     if(p.shields>0){ctx.fillStyle='#8fd3ff';ctx.textAlign='left';ctx.font='13px sans-serif';ctx.fillText('Suojia: '+p.shields,8,48);}
     
-    // Happimittari Avaruudessa
     if(alt >= 1400){
       ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(W-110,40,100,12);
       ctx.fillStyle='#4afebe';ctx.fillRect(W-110,40,p.oxygen,12);
@@ -481,23 +486,23 @@ function draw(){
   ctx.textAlign='center';btns=[];
   if(state==='start')panel('POMPPUKEPPI',[
     'Ohjaus: Nuolet / Ruutunäppäimet','Suojapainike: Välilyönti / 🛡️-nappi','',
-    'Hyppää esteiden PÄÄLLE saadaksesi boostin.','Osuma sivulta tai alta pudottaa!','',
-    'Matkalla voit kerätä kolikoita, suojia','sekä avaruudessa HAPPEA.','Tavoite: Kuu ('+GOAL+' m) | Kolikot: '+save.coins
+    'Hyppää lintujen ja lentokoneiden PÄÄLLE:','boosti! (lentokone = tuplaboosti)','Osuma sivulta tai alta pudottaa.','',
+    'Kerää kolikoita, suojia ja happea.','Tavoite: Kuu ('+GOAL+' m) | Kolikot: '+save.coins
   ]);
   else if(state==='dead')panel('Putosit!',['Korkein: '+alt+' m','Saat kolikoita: +'+earned,'Kolikot yhteensä: '+save.coins]);
   else if(state==='win')panel('KUUSSA!',['Pääsit '+GOAL+' metrin korkeuteen!','Saat kolikoita: +'+earned,'Kolikot yhteensä: '+save.coins]);
   else if(state==='shop'){
     ctx.fillStyle='rgba(0,0,20,.85)';ctx.fillRect(15,30,W-30,H-60);
-    ctx.fillStyle='#fff';ctx.font='bold 24px sans-serif';ctx.fillText('KAUPPA',W/2,65);
-    ctx.fillStyle='#ffd23a';ctx.font='bold 15px sans-serif';ctx.fillText('Kolikot: '+save.coins,W/2,90);
+    ctx.fillStyle='#fff';ctx.font='bold 26px sans-serif';ctx.fillText('KAUPPA',W/2,78);
+    ctx.fillStyle='#ffd23a';ctx.font='bold 16px sans-serif';ctx.fillText('Kolikot: '+save.coins,W/2,104);
     ITEMS.forEach((it,i)=>{
-      const y=110+i*110,l=save[it.id],max=it.costs.length,full=l>=max,c=it.costs[l];
-      ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';
-      ctx.fillText((i+1)+'. '+it.name+' ('+(it.id==='shield'?'omistat '+l:'taso '+l+'/'+max)+')',30,y+16);
-      ctx.font='12px sans-serif';ctx.fillStyle='#cfe';ctx.fillText(it.desc,30,y+34);
-      button(full?'Täynnä':'Osta ('+c+' kolikkoa)',30,y+46,W-60,36,()=>buy(i),!full&&save.coins>=c);
+      const y=124+i*104,l=save[it.id],max=it.costs.length,full=l>=max,c=it.costs[l];
+      ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 15px sans-serif';
+      ctx.fillText((i+1)+'. '+it.name+'  ('+(it.id==='shield'?'omistat '+l:'taso '+l+'/'+max)+')',24,y+16);
+      ctx.font='13px sans-serif';ctx.fillStyle='#cfe';ctx.fillText(it.desc,24,y+36);
+      button(full?'Täynnä':'Osta ('+c+' kolikkoa)',24,y+48,W-48,34,()=>buy(i),!full&&save.coins>=c);
     });
-    button('Takaisin',30,H-80,W-60,36,()=>{state='start';});
+    button('Takaisin',24,H-100,W-48,34,()=>{state='start';});
   }
 }
 
